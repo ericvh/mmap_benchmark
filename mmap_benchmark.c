@@ -6,24 +6,32 @@
 #include <sys/time.h>
 #include <stdint.h>
 #include <time.h>
+#include <sys/stat.h>
 
-#define FILE_SIZE (256 * 1024 * 1024) // 256MB
-#define PAGE_SIZE 4096               // 4KB
-#define NUM_ACCESSES (FILE_SIZE / PAGE_SIZE) // Number of accesses in sequential/random
+#define PAGE_SIZE 4096 // 4KB
 
-// Get time in seconds
 double get_time_in_seconds() {
     struct timeval tv;
     gettimeofday(&tv, NULL);
     return tv.tv_sec + tv.tv_usec / 1e6;
 }
 
+// Get file size
+size_t get_file_size(int fd) {
+    struct stat st;
+    if (fstat(fd, &st) != 0) {
+        perror("fstat");
+        exit(EXIT_FAILURE);
+    }
+    return st.st_size;
+}
+
 // Sequential read benchmark
-void benchmark_sequential(const char *mapped) {
+void benchmark_sequential(const char *mapped, size_t file_size) {
     volatile char sum = 0;
     double start = get_time_in_seconds();
 
-    for (size_t i = 0; i < FILE_SIZE; i += PAGE_SIZE) {
+    for (size_t i = 0; i < file_size; i += PAGE_SIZE) {
         sum += mapped[i];  // Accessing each page sequentially
     }
 
@@ -32,12 +40,12 @@ void benchmark_sequential(const char *mapped) {
 }
 
 // Random read benchmark
-void benchmark_random(const char *mapped) {
+void benchmark_random(const char *mapped, size_t num_accesses) {
     volatile char sum = 0;
     double start = get_time_in_seconds();
 
-    for (size_t i = 0; i < NUM_ACCESSES; i++) {
-        size_t rand_offset = (rand() % NUM_ACCESSES) * PAGE_SIZE;
+    for (unsigned long long i = 0; i < num_accesses; i++) {
+        size_t rand_offset = (rand() % num_accesses) * PAGE_SIZE;
         sum += mapped[rand_offset];  // Accessing a random page
     }
 
@@ -52,7 +60,10 @@ void run_benchmark(const char *filename) {
         exit(EXIT_FAILURE);
     }
 
-    char *mapped = mmap(NULL, FILE_SIZE, PROT_READ, MAP_PRIVATE, fd, 0);
+    size_t file_size = get_file_size(fd);
+    size_t num_accesses = file_size / PAGE_SIZE;
+
+    char *mapped = mmap(NULL, file_size, PROT_READ, MAP_PRIVATE, fd, 0);
     if (mapped == MAP_FAILED) {
         perror("mmap");
         close(fd);
@@ -60,10 +71,11 @@ void run_benchmark(const char *filename) {
     }
 
     printf("Running mmap benchmarks on: %s\n", filename);
-    benchmark_sequential(mapped);
-    benchmark_random(mapped);
 
-    munmap(mapped, FILE_SIZE);
+    benchmark_sequential(mapped, file_size);
+    benchmark_random(mapped, num_accesses);
+
+    munmap(mapped, file_size);
     close(fd);
 }
 
