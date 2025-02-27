@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 
 #define PAGE_SIZE 4096 // 4KB
+#define NUM_ITERATIONS 5
 
 double get_time_in_seconds() {
     struct timeval tv;
@@ -53,6 +54,14 @@ void benchmark_random(const char *mapped, size_t num_accesses) {
     printf("Random read time: %f seconds\n", end - start);
 }
 
+// Clear page cache
+void clear_page_cache() {
+    if (system("sh -c 'echo 3 > /proc/sys/vm/drop_caches'") != 0) {
+        perror("Failed to clear page cache");
+        exit(EXIT_FAILURE);
+    }
+}
+
 void run_benchmark(const char *filename) {
     int fd = open(filename, O_RDONLY);
     if (fd == -1) {
@@ -72,8 +81,13 @@ void run_benchmark(const char *filename) {
 
     printf("Running mmap benchmarks on: %s\n", filename);
 
-    benchmark_sequential(mapped, file_size);
-    benchmark_random(mapped, num_accesses);
+    for(int iteration=0; iteration<NUM_ITERATIONS; iteration++) {
+        printf("Iteration %d\n", iteration + 1);
+        clear_page_cache();
+        benchmark_sequential(mapped, file_size);
+        clear_page_cache();
+        benchmark_random(mapped, num_accesses);
+    }
 
     munmap(mapped, file_size);
     close(fd);
