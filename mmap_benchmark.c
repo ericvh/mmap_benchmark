@@ -27,8 +27,16 @@ size_t get_file_size(int fd) {
     return st.st_size;
 }
 
+void write_csv_header(FILE *csv_file) {
+    fprintf(csv_file, "Path,File Size (bytes),Memory Size (bytes),Test Type,Time (seconds)\n");
+}
+
+void write_csv_record(FILE *csv_file, const char *path, size_t file_size, size_t memory_size, const char *test_type, double time) {
+    fprintf(csv_file, "%s,%zu,%zu,%s,%f\n", path, file_size, memory_size, test_type, time);
+}
+
 // Sequential read benchmark
-void benchmark_sequential(const char *mapped, size_t file_size) {
+void benchmark_sequential(const char *mapped, size_t file_size, FILE *csv_file, const char *path) {
     volatile char sum = 0;
     double start = get_time_in_seconds();
 
@@ -37,11 +45,12 @@ void benchmark_sequential(const char *mapped, size_t file_size) {
     }
 
     double end = get_time_in_seconds();
-    printf("Sequential read time: %f seconds\n", end - start);
+    double time_taken = end - start;
+    write_csv_record(csv_file, path, file_size, file_size, "Sequential", time_taken);
 }
 
 // Random read benchmark
-void benchmark_random(const char *mapped, size_t num_accesses) {
+void benchmark_random(const char *mapped, size_t num_accesses, FILE *csv_file, const char *path, size_t file_size) {
     volatile char sum = 0;
     double start = get_time_in_seconds();
 
@@ -51,7 +60,8 @@ void benchmark_random(const char *mapped, size_t num_accesses) {
     }
 
     double end = get_time_in_seconds();
-    printf("Random read time: %f seconds\n", end - start);
+    double time_taken = end - start;
+    write_csv_record(csv_file, path, file_size, num_accesses * PAGE_SIZE, "Random", time_taken);
 }
 
 // Clear page cache
@@ -79,16 +89,26 @@ void run_benchmark(const char *filename) {
         exit(EXIT_FAILURE);
     }
 
+    FILE *csv_file = fopen("benchmark_results.csv", "w");
+    if (!csv_file) {
+        perror("fopen");
+        munmap(mapped, file_size);
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+
+    write_csv_header(csv_file);
     printf("Running mmap benchmarks on: %s\n", filename);
 
     for(int iteration=0; iteration<NUM_ITERATIONS; iteration++) {
         printf("Iteration %d\n", iteration + 1);
         clear_page_cache();
-        benchmark_sequential(mapped, file_size);
+        benchmark_sequential(mapped, file_size, csv_file, filename);
         clear_page_cache();
-        benchmark_random(mapped, num_accesses);
+        benchmark_random(mapped, num_accesses, csv_file, filename, file_size);
     }
 
+    fclose(csv_file);
     munmap(mapped, file_size);
     close(fd);
 }
